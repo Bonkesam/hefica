@@ -15,11 +15,26 @@ model User {
   id        String   @id @default(cuid())
   email     String   @unique
   password  String
-  firstName String?
-  lastName  String?
+  firstName String
+  lastName  String
   avatar    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Email verification
+  emailVerified          Boolean   @default(false)
+  verificationToken      String?   @unique
+  verificationTokenExpiry DateTime?
+
+  // Password reset
+  resetToken       String?   @unique
+  resetTokenExpiry DateTime?
+
+  // Security
+  failedLoginAttempts Int       @default(0)
+  lockoutUntil        DateTime?
+  accountStatus       AccountStatus @default(ACTIVE)
+  lastLoginAt         DateTime?
 
   // User preferences and goals
   age           Int?
@@ -189,6 +204,12 @@ model Report {
 }
 
 // Enums
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
 enum Gender {
   MALE
   FEMALE
