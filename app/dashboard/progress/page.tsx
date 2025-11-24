@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
+import { apiClient } from '@/lib/api-client';
 import {
   Plus,
   Scale,
@@ -11,20 +12,10 @@ import {
   Activity,
   Heart,
   Moon,
-  Smile
+  Smile,
+  Loader2,
+  Trash2
 } from 'lucide-react';
-
-// Mock progress data
-const mockProgressLogs = [
-  { id: 1, date: '2025-01-24', type: 'WEIGHT', value: 75, unit: 'kg' },
-  { id: 2, date: '2025-01-24', type: 'BODY_FAT', value: 18, unit: '%' },
-  { id: 3, date: '2025-01-21', type: 'WEIGHT', value: 75.3, unit: 'kg' },
-  { id: 4, date: '2025-01-21', type: 'BODY_FAT', value: 18.2, unit: '%' },
-  { id: 5, date: '2025-01-17', type: 'WEIGHT', value: 75.8, unit: 'kg' },
-  { id: 6, date: '2025-01-17', type: 'BODY_FAT', value: 18.5, unit: '%' },
-  { id: 7, date: '2025-01-14', type: 'WEIGHT', value: 76.2, unit: 'kg' },
-  { id: 8, date: '2025-01-10', type: 'WEIGHT', value: 76.5, unit: 'kg' },
-];
 
 const progressTypes = [
   { id: 'WEIGHT', label: 'Weight', icon: Scale, color: 'text-blue-600', bgColor: 'bg-blue-100' },
@@ -39,13 +30,81 @@ const progressTypes = [
 export default function ProgressPage() {
   const [selectedType, setSelectedType] = useState('WEIGHT');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [progressLogs, setProgressLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const filteredLogs = mockProgressLogs.filter(log => log.type === selectedType);
+  useEffect(() => {
+    fetchProgressLogs();
+  }, [selectedType]);
+
+  const fetchProgressLogs = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const response = await apiClient.progressLogs.list({
+        type: selectedType,
+      });
+      setProgressLogs(response.progressLogs || []);
+    } catch (err: any) {
+      console.error('Failed to fetch progress logs:', err);
+      setError(err.message || 'Failed to load progress logs');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this progress log?')) {
+      return;
+    }
+
+    try {
+      await apiClient.progressLogs.delete(id);
+      setProgressLogs(progressLogs.filter(log => log.id !== id));
+    } catch (err: any) {
+      console.error('Failed to delete progress log:', err);
+      alert(err.message || 'Failed to delete progress log');
+    }
+  };
+
+  const filteredLogs = progressLogs;
   const latestLog = filteredLogs[0];
   const previousLog = filteredLogs[1];
 
   const change = latestLog && previousLog ? latestLog.value - previousLog.value : 0;
   const changePercent = previousLog ? ((change / previousLog.value) * 100).toFixed(1) : 0;
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-black mx-auto mb-4 animate-spin" />
+            <p className="text-gray-600">Loading progress data...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <button
+              onClick={fetchProgressLogs}
+              className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -99,7 +158,7 @@ export default function ProgressPage() {
                 <span className="text-xl text-gray-500 ml-2">{latestLog.unit}</span>
               </p>
               <p className="text-xs text-gray-500 mt-2">
-                As of {new Date(latestLog.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                As of {new Date(latestLog.logDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </p>
             </div>
 
@@ -150,45 +209,71 @@ export default function ProgressPage() {
             <h3 className="text-lg font-bold text-gray-900">Log History</h3>
           </div>
           <div className="p-6">
-            <div className="space-y-3">
-              {filteredLogs.map((log, index) => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+            {filteredLogs.length === 0 ? (
+              <div className="text-center py-12">
+                <Scale className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No logs yet</h3>
+                <p className="text-gray-600 mb-4">Start tracking your progress by adding your first log</p>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="inline-flex items-center gap-2 bg-black text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-800 transition-all"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-white rounded-lg">
-                      <Calendar size={20} className="text-gray-600" />
+                  <Plus size={20} />
+                  Log Progress
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredLogs.map((log, index) => (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="p-2 bg-white rounded-lg">
+                        <Calendar size={20} className="text-gray-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {log.value} {log.unit}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {new Date(log.logDate).toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </p>
+                        {log.notes && (
+                          <p className="text-xs text-gray-400 mt-1">{log.notes}</p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">
-                        {log.value} {log.unit}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {new Date(log.date).toLocaleDateString('en-US', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      {index < filteredLogs.length - 1 && (
+                        <div className="flex items-center gap-2">
+                          {log.value < filteredLogs[index + 1].value ? (
+                            <TrendingDown className="text-green-600" size={20} />
+                          ) : log.value > filteredLogs[index + 1].value ? (
+                            <TrendingUp className="text-red-600" size={20} />
+                          ) : null}
+                          <span className="text-sm text-gray-600">
+                            {(log.value - filteredLogs[index + 1].value).toFixed(1)}
+                          </span>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => handleDelete(log.id)}
+                        className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={18} className="text-gray-600 hover:text-red-600" />
+                      </button>
                     </div>
                   </div>
-                  {index < filteredLogs.length - 1 && (
-                    <div className="flex items-center gap-2">
-                      {log.value < filteredLogs[index + 1].value ? (
-                        <TrendingDown className="text-green-600" size={20} />
-                      ) : log.value > filteredLogs[index + 1].value ? (
-                        <TrendingUp className="text-red-600" size={20} />
-                      ) : null}
-                      <span className="text-sm text-gray-600">
-                        {(log.value - filteredLogs[index + 1].value).toFixed(1)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
