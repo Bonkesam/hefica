@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import Link from 'next/link';
+import { apiClient } from '@/lib/api-client';
 import {
   Plus,
   Search,
@@ -14,84 +15,9 @@ import {
   CheckCircle,
   Edit2,
   Trash2,
-  ChevronRight
+  ChevronRight,
+  Loader2
 } from 'lucide-react';
-
-// Mock nutrition data
-const mockMealPlans = [
-  {
-    id: 1,
-    name: 'Balanced Diet Plan',
-    description: 'High protein, moderate carbs',
-    isActive: true,
-    startDate: '2025-01-20',
-    mealCount: 28,
-    avgCalories: 2100,
-    protein: 150,
-    carbs: 180,
-    fat: 70,
-  },
-  {
-    id: 2,
-    name: 'Cutting Phase',
-    description: 'Low carb, calorie deficit',
-    isActive: false,
-    startDate: '2025-01-01',
-    endDate: '2025-01-19',
-    mealCount: 19,
-    avgCalories: 1800,
-    protein: 140,
-    carbs: 120,
-    fat: 60,
-  },
-];
-
-const mockTodayMeals = [
-  {
-    id: 1,
-    name: 'Oatmeal with Berries',
-    type: 'BREAKFAST',
-    time: '08:00',
-    calories: 380,
-    protein: 12,
-    carbs: 65,
-    fat: 8,
-    completed: true,
-  },
-  {
-    id: 2,
-    name: 'Chicken & Rice Bowl',
-    type: 'LUNCH',
-    time: '13:00',
-    calories: 520,
-    protein: 45,
-    carbs: 60,
-    fat: 12,
-    completed: true,
-  },
-  {
-    id: 3,
-    name: 'Protein Shake',
-    type: 'SNACK',
-    time: '16:00',
-    calories: 180,
-    protein: 25,
-    carbs: 15,
-    fat: 3,
-    completed: false,
-  },
-  {
-    id: 4,
-    name: 'Grilled Salmon & Veggies',
-    type: 'DINNER',
-    time: '19:00',
-    calories: 550,
-    protein: 48,
-    carbs: 35,
-    fat: 25,
-    completed: false,
-  },
-];
 
 const mealTypeColors: Record<string, string> = {
   BREAKFAST: 'bg-yellow-100 text-yellow-700',
@@ -104,19 +30,140 @@ const mealTypeColors: Record<string, string> = {
 
 export default function NutritionPage() {
   const [activeTab, setActiveTab] = useState<'today' | 'plans'>('today');
+  const [todayMeals, setTodayMeals] = useState<any[]>([]);
+  const [mealPlans, setMealPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const todayTotals = mockTodayMeals.reduce(
+  useEffect(() => {
+    if (activeTab === 'today') {
+      fetchTodayMeals();
+    } else {
+      fetchMealPlans();
+    }
+  }, [activeTab]);
+
+  const fetchTodayMeals = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const today = new Date();
+      const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString();
+      const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString();
+
+      const response = await apiClient.meals.list({
+        startDate: startOfDay,
+        endDate: endOfDay,
+      });
+      setTodayMeals(response.meals || []);
+    } catch (err: any) {
+      console.error('Failed to fetch meals:', err);
+      setError(err.message || 'Failed to load meals');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMealPlans = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const response = await apiClient.mealPlans.list();
+      setMealPlans(response.mealPlans || []);
+    } catch (err: any) {
+      console.error('Failed to fetch meal plans:', err);
+      setError(err.message || 'Failed to load meal plans');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteMeal = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this meal?')) {
+      return;
+    }
+
+    try {
+      await apiClient.meals.delete(id);
+      setTodayMeals(todayMeals.filter(m => m.id !== id));
+    } catch (err: any) {
+      console.error('Failed to delete meal:', err);
+      alert(err.message || 'Failed to delete meal');
+    }
+  };
+
+  const handleDeleteMealPlan = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this meal plan?')) {
+      return;
+    }
+
+    try {
+      await apiClient.mealPlans.delete(id);
+      setMealPlans(mealPlans.filter(p => p.id !== id));
+    } catch (err: any) {
+      console.error('Failed to delete meal plan:', err);
+      alert(err.message || 'Failed to delete meal plan');
+    }
+  };
+
+  const toggleMealCompletion = async (meal: any) => {
+    try {
+      await apiClient.meals.update(meal.id, {
+        ...meal,
+        completed: !meal.completed,
+      });
+      setTodayMeals(todayMeals.map(m =>
+        m.id === meal.id ? { ...m, completed: !m.completed } : m
+      ));
+    } catch (err: any) {
+      console.error('Failed to update meal:', err);
+      alert(err.message || 'Failed to update meal');
+    }
+  };
+
+  const todayTotals = todayMeals.reduce(
     (acc, meal) => ({
-      calories: acc.calories + meal.calories,
-      protein: acc.protein + meal.protein,
-      carbs: acc.carbs + meal.carbs,
-      fat: acc.fat + meal.fat,
+      calories: acc.calories + (meal.calories || 0),
+      protein: acc.protein + (meal.protein || 0),
+      carbs: acc.carbs + (meal.carbs || 0),
+      fat: acc.fat + (meal.fat || 0),
     }),
     { calories: 0, protein: 0, carbs: 0, fat: 0 }
   );
 
   const calorieGoal = 2200;
   const calorieProgress = (todayTotals.calories / calorieGoal) * 100;
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-black mx-auto mb-4 animate-spin" />
+            <p className="text-gray-600">Loading nutrition data...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <button
+              onClick={() => activeTab === 'today' ? fetchTodayMeals() : fetchMealPlans()}
+              className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -221,56 +268,69 @@ export default function NutritionPage() {
                 <h2 className="text-xl font-bold text-gray-900">Today's Meals</h2>
               </div>
               <div className="p-6 space-y-4">
-                {mockTodayMeals.map((meal) => (
-                  <div
-                    key={meal.id}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      meal.completed
-                        ? 'border-green-200 bg-green-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h4 className="font-semibold text-gray-900">{meal.name}</h4>
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${mealTypeColors[meal.type]}`}>
-                            {meal.type.toLowerCase().replace('_', ' ')}
-                          </span>
+                {todayMeals.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">No meals scheduled for today</p>
+                ) : (
+                  todayMeals.map((meal) => (
+                    <div
+                      key={meal.id}
+                      className={`p-4 rounded-lg border-2 transition-all ${
+                        meal.completed
+                          ? 'border-green-200 bg-green-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-semibold text-gray-900">{meal.name}</h4>
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${mealTypeColors[meal.mealType]}`}>
+                              {meal.mealType.toLowerCase().replace('_', ' ')}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <span className="flex items-center gap-1">
+                              <Clock size={14} />
+                              {meal.scheduledAt
+                                ? new Date(meal.scheduledAt).toLocaleTimeString('en-US', {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })
+                                : 'Not scheduled'}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Flame size={14} className="text-orange-500" />
+                              {meal.calories || 0} kcal
+                            </span>
+                            <span>P: {meal.protein || 0}g</span>
+                            <span>C: {meal.carbs || 0}g</span>
+                            <span>F: {meal.fat || 0}g</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                          <span className="flex items-center gap-1">
-                            <Clock size={14} />
-                            {meal.time}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Flame size={14} className="text-orange-500" />
-                            {meal.calories} kcal
-                          </span>
-                          <span>P: {meal.protein}g</span>
-                          <span>C: {meal.carbs}g</span>
-                          <span>F: {meal.fat}g</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                          <Edit2 size={18} className="text-gray-600" />
-                        </button>
-                        <div
-                          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                            meal.completed
-                              ? 'bg-green-500 border-green-500'
-                              : 'border-gray-300'
-                          }`}
-                        >
-                          {meal.completed && (
-                            <CheckCircle size={14} className="text-white" />
-                          )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDeleteMeal(meal.id)}
+                            className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={18} className="text-gray-600 hover:text-red-600" />
+                          </button>
+                          <button
+                            onClick={() => toggleMealCompletion(meal)}
+                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${
+                              meal.completed
+                                ? 'bg-green-500 border-green-500'
+                                : 'border-gray-300 hover:border-green-500'
+                            }`}
+                          >
+                            {meal.completed && (
+                              <CheckCircle size={14} className="text-white" />
+                            )}
+                          </button>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </>
@@ -278,70 +338,91 @@ export default function NutritionPage() {
 
         {activeTab === 'plans' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {mockMealPlans.map((plan) => (
-              <div
-                key={plan.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all"
-              >
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
-                        {plan.isActive && (
-                          <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-                            Active
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-600">{plan.description}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <p className="text-xs text-gray-500">Avg Calories</p>
-                      <p className="text-lg font-bold text-gray-900">{plan.avgCalories}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Meals</p>
-                      <p className="text-lg font-bold text-gray-900">{plan.mealCount}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Duration</p>
-                      <p className="text-lg font-bold text-gray-900">
-                        {plan.endDate
-                          ? `${Math.ceil((new Date(plan.endDate).getTime() - new Date(plan.startDate).getTime()) / (1000 * 60 * 60 * 24))} days`
-                          : 'Ongoing'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 text-sm text-gray-600 pb-4 border-b border-gray-100">
-                    <span>P: {plan.protein}g</span>
-                    <span>•</span>
-                    <span>C: {plan.carbs}g</span>
-                    <span>•</span>
-                    <span>F: {plan.fat}g</span>
-                  </div>
-                </div>
-
-                <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
-                  <Link
-                    href={`/dashboard/nutrition/${plan.id}`}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-black text-white rounded-lg font-medium hover:bg-gray-800 transition-all"
-                  >
-                    View Plan
-                  </Link>
-                  <button className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
-                    <Edit2 size={18} className="text-gray-600" />
-                  </button>
-                  <button className="p-2 hover:bg-red-50 rounded-lg transition-colors">
-                    <Trash2 size={18} className="text-gray-600 hover:text-red-600" />
-                  </button>
-                </div>
+            {mealPlans.length === 0 ? (
+              <div className="col-span-full text-center py-12 bg-white rounded-xl border border-gray-100">
+                <Apple className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No meal plans yet</h3>
+                <p className="text-gray-600 mb-4">Create your first meal plan to get started</p>
+                <Link
+                  href="/dashboard/nutrition/create-plan"
+                  className="inline-flex items-center gap-2 bg-black text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-800 transition-all"
+                >
+                  <Plus size={20} />
+                  Create Meal Plan
+                </Link>
               </div>
-            ))}
+            ) : (
+              mealPlans.map((plan) => (
+                <div
+                  key={plan.id}
+                  className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all"
+                >
+                  <div className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
+                          {plan.isActive && (
+                            <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600">{plan.description || 'No description'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4 mb-4">
+                      <div>
+                        <p className="text-xs text-gray-500">Target Calories</p>
+                        <p className="text-lg font-bold text-gray-900">{plan.targetCalories || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Meals</p>
+                        <p className="text-lg font-bold text-gray-900">{plan.meals?.length || 0}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Duration</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {plan.endDate
+                            ? `${Math.ceil((new Date(plan.endDate).getTime() - new Date(plan.startDate).getTime()) / (1000 * 60 * 60 * 24))} days`
+                            : 'Ongoing'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 text-sm text-gray-600 pb-4 border-b border-gray-100">
+                      <span>Started: {new Date(plan.startDate).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}</span>
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
+                    <Link
+                      href={`/dashboard/nutrition/${plan.id}`}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-black text-white rounded-lg font-medium hover:bg-gray-800 transition-all"
+                    >
+                      View Plan
+                    </Link>
+                    <Link
+                      href={`/dashboard/nutrition/${plan.id}/edit`}
+                      className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      <Edit2 size={18} className="text-gray-600" />
+                    </Link>
+                    <button
+                      onClick={() => handleDeleteMealPlan(plan.id)}
+                      className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 size={18} className="text-gray-600 hover:text-red-600" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import DashboardLayout from '@/components/DashboardLayout';
 import Link from 'next/link';
+import { apiClient } from '@/lib/api-client';
 import {
   Calendar,
   Dumbbell,
@@ -14,43 +15,10 @@ import {
   Plus,
   TrendingUp,
   ChevronRight,
-  Clock
+  Clock,
+  Loader2,
+  Activity
 } from 'lucide-react';
-
-// Mock data - will replace with API calls later
-const mockData = {
-  stats: {
-    totalWorkouts: 12,
-    totalMeals: 45,
-    currentWeight: 75,
-    calorieGoal: 2200,
-    todayCalories: 1842,
-    weeklyWorkouts: 5
-  },
-  todaysMeals: [
-    { id: 1, name: 'Greek Yogurt Bowl', type: 'BREAKFAST', calories: 350, time: '08:00', completed: true },
-    { id: 2, name: 'Grilled Chicken Salad', type: 'LUNCH', calories: 520, time: '13:00', completed: true },
-    { id: 3, name: 'Protein Shake', type: 'SNACK', calories: 180, time: '16:00', completed: true },
-    { id: 4, name: 'Salmon & Vegetables', type: 'DINNER', calories: 620, time: '19:00', completed: false },
-  ],
-  todaysWorkout: {
-    id: 1,
-    name: 'Upper Body Strength',
-    duration: 45,
-    completed: false,
-    exercises: [
-      { name: 'Bench Press', sets: 3, reps: 12, completed: true },
-      { name: 'Dumbbell Rows', sets: 3, reps: 10, completed: true },
-      { name: 'Shoulder Press', sets: 3, reps: 12, completed: false },
-      { name: 'Bicep Curls', sets: 3, reps: 15, completed: false },
-    ]
-  },
-  recentProgress: [
-    { date: '2025-01-23', weight: 75.2, bodyFat: 18 },
-    { date: '2025-01-20', weight: 75.5, bodyFat: 18.2 },
-    { date: '2025-01-17', weight: 75.8, bodyFat: 18.5 },
-  ]
-};
 
 interface StatCardProps {
   title: string;
@@ -106,8 +74,61 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, subtitle, icon: Icon,
 
 export default function DashboardPage() {
   const { data: session } = useSession();
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const calorieProgress = (mockData.stats.todayCalories / mockData.stats.calorieGoal) * 100;
+  useEffect(() => {
+    fetchDashboardStats();
+  }, []);
+
+  const fetchDashboardStats = async () => {
+    try {
+      setLoading(true);
+      const response = await apiClient.dashboard.stats();
+      setStats(response.stats);
+    } catch (err: any) {
+      console.error('Failed to fetch dashboard stats:', err);
+      setError(err.message || 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calorieProgress = stats
+    ? (stats.todayCalories / stats.calorieGoal) * 100
+    : 0;
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-black mx-auto mb-4 animate-spin" />
+            <p className="text-gray-600">Loading your dashboard...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <button
+              onClick={fetchDashboardStats}
+              className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -136,32 +157,29 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
             title="Workouts This Month"
-            value={mockData.stats.totalWorkouts}
+            value={stats?.totalWorkouts || 0}
             icon={Dumbbell}
             color="text-purple-600"
-            trend={12}
             index={0}
           />
           <StatCard
             title="Meals Logged"
-            value={mockData.stats.totalMeals}
+            value={stats?.totalMeals || 0}
             icon={Apple}
             color="text-green-600"
-            trend={8}
             index={1}
           />
           <StatCard
             title="Current Weight"
-            value={`${mockData.stats.currentWeight} kg`}
+            value={stats?.currentWeight ? `${stats.currentWeight} kg` : 'Not set'}
             icon={Scale}
             color="text-blue-600"
-            trend={-3}
             index={2}
           />
           <StatCard
             title="Today's Calories"
-            value={mockData.stats.todayCalories}
-            subtitle={`Goal: ${mockData.stats.calorieGoal}`}
+            value={stats?.todayCalories || 0}
+            subtitle={`Goal: ${stats?.calorieGoal || 2200}`}
             icon={Flame}
             color="text-orange-600"
             index={3}
@@ -173,7 +191,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold text-gray-900">Daily Calorie Goal</h3>
             <span className="text-sm font-medium text-gray-600">
-              {mockData.stats.todayCalories} / {mockData.stats.calorieGoal} kcal
+              {stats?.todayCalories || 0} / {stats?.calorieGoal || 2200} kcal
             </span>
           </div>
           <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
@@ -183,7 +201,9 @@ export default function DashboardPage() {
             />
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            {calorieProgress >= 100 ? 'Goal reached! 🎉' : `${Math.round(mockData.stats.calorieGoal - mockData.stats.todayCalories)} kcal remaining`}
+            {calorieProgress >= 100
+              ? 'Goal reached! 🎉'
+              : `${Math.round((stats?.calorieGoal || 2200) - (stats?.todayCalories || 0))} kcal remaining`}
           </p>
         </div>
 
@@ -204,7 +224,8 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="p-6 space-y-3">
-              {mockData.todaysMeals.map((meal) => (
+              {stats?.todaysMeals && stats.todaysMeals.length > 0 ? (
+                stats.todaysMeals.map((meal: any) => (
                 <div
                   key={meal.id}
                   className={`p-4 rounded-lg border-2 transition-all ${
@@ -245,7 +266,10 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+              ))
+              ) : (
+                <p className="text-center text-gray-500 py-8">No meals scheduled for today</p>
+              )}
               <Link
                 href="/dashboard/nutrition/create"
                 className="w-full flex items-center justify-center gap-2 py-3 text-sm font-medium text-gray-600 hover:text-black border-2 border-dashed border-gray-300 hover:border-gray-400 rounded-lg transition-all"
@@ -271,49 +295,56 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="p-6">
-              <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-gray-900">{mockData.todaysWorkout.name}</h3>
-                  <div className="flex items-center text-sm text-gray-600 bg-white px-3 py-1 rounded-full">
-                    <Timer className="w-4 h-4 mr-1 text-purple-600" />
-                    {mockData.todaysWorkout.duration} min
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-3">
-                {mockData.todaysWorkout.exercises.map((exercise, index) => (
-                  <div
-                    key={index}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      exercise.completed
-                        ? 'border-blue-200 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
+              {stats?.todaysWorkout ? (
+                <>
+                  <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-semibold text-gray-900">{exercise.name}</h4>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {exercise.sets} sets × {exercise.reps} reps
-                        </p>
-                      </div>
-                      <div
-                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                          exercise.completed
-                            ? 'bg-blue-500 border-blue-500'
-                            : 'border-gray-300'
-                        }`}
-                      >
-                        {exercise.completed && (
-                          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
+                      <h3 className="font-semibold text-gray-900">{stats.todaysWorkout.name}</h3>
+                      <div className="flex items-center text-sm text-gray-600 bg-white px-3 py-1 rounded-full">
+                        <Timer className="w-4 h-4 mr-1 text-purple-600" />
+                        {stats.todaysWorkout.duration} min
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
+                  <div className="space-y-3">
+                    {stats.todaysWorkout.exercises.map((exercise: any, index: number) => (
+                      <div
+                        key={index}
+                        className={`p-4 rounded-lg border-2 transition-all ${
+                          exercise.completed
+                            ? 'border-blue-200 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-semibold text-gray-900">{exercise.name}</h4>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {exercise.sets} sets × {exercise.reps} reps
+                              {exercise.weight && ` @ ${exercise.weight} kg`}
+                            </p>
+                          </div>
+                          <div
+                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                              exercise.completed
+                                ? 'bg-blue-500 border-blue-500'
+                                : 'border-gray-300'
+                            }`}
+                          >
+                            {exercise.completed && (
+                              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-center text-gray-500 py-8">No workout scheduled for today</p>
+              )}
               <Link
                 href="/dashboard/workouts/create"
                 className="w-full flex items-center justify-center gap-2 py-3 mt-3 text-sm font-medium text-gray-600 hover:text-black border-2 border-dashed border-gray-300 hover:border-gray-400 rounded-lg transition-all"
