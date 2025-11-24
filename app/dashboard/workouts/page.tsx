@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import Link from 'next/link';
+import { apiClient } from '@/lib/api-client';
 import {
   Plus,
   Search,
@@ -16,61 +17,9 @@ import {
   MoreVertical,
   Edit2,
   Trash2,
-  Copy
+  Copy,
+  Loader2
 } from 'lucide-react';
-
-// Mock workout data - will replace with API calls
-const mockWorkouts = [
-  {
-    id: 1,
-    name: 'Upper Body Strength',
-    description: 'Focus on chest, back, and arms',
-    workoutType: 'STRENGTH',
-    duration: 45,
-    isActive: true,
-    startDate: '2025-01-20',
-    exerciseCount: 6,
-    completedSessions: 8,
-    lastCompleted: '2025-01-23',
-  },
-  {
-    id: 2,
-    name: 'Leg Day Power',
-    description: 'Squats, deadlifts, and leg accessories',
-    workoutType: 'STRENGTH',
-    duration: 60,
-    isActive: true,
-    startDate: '2025-01-18',
-    exerciseCount: 5,
-    completedSessions: 6,
-    lastCompleted: '2025-01-22',
-  },
-  {
-    id: 3,
-    name: 'Cardio HIIT',
-    description: '20 minutes high intensity intervals',
-    workoutType: 'CARDIO',
-    duration: 20,
-    isActive: true,
-    startDate: '2025-01-15',
-    exerciseCount: 4,
-    completedSessions: 12,
-    lastCompleted: '2025-01-24',
-  },
-  {
-    id: 4,
-    name: 'Full Body Circuit',
-    description: 'Complete body workout with mixed exercises',
-    workoutType: 'MIXED',
-    duration: 40,
-    isActive: false,
-    startDate: '2025-01-10',
-    endDate: '2025-01-20',
-    exerciseCount: 8,
-    completedSessions: 5,
-    lastCompleted: '2025-01-20',
-  },
-];
 
 const workoutTypeColors: Record<string, string> = {
   STRENGTH: 'bg-purple-100 text-purple-700',
@@ -82,11 +31,46 @@ const workoutTypeColors: Record<string, string> = {
 };
 
 export default function WorkoutsPage() {
+  const [workouts, setWorkouts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [showActiveOnly, setShowActiveOnly] = useState(true);
 
-  const filteredWorkouts = mockWorkouts.filter(workout => {
+  useEffect(() => {
+    fetchWorkouts();
+  }, []);
+
+  const fetchWorkouts = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const response = await apiClient.workouts.list();
+      setWorkouts(response.workouts || []);
+    } catch (err: any) {
+      console.error('Failed to fetch workouts:', err);
+      setError(err.message || 'Failed to load workouts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this workout?')) {
+      return;
+    }
+
+    try {
+      await apiClient.workouts.delete(id);
+      setWorkouts(workouts.filter(w => w.id !== id));
+    } catch (err: any) {
+      console.error('Failed to delete workout:', err);
+      alert(err.message || 'Failed to delete workout');
+    }
+  };
+
+  const filteredWorkouts = workouts.filter(workout => {
     const matchesSearch = workout.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          workout.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = filterType === 'all' || workout.workoutType === filterType;
@@ -96,10 +80,41 @@ export default function WorkoutsPage() {
   });
 
   const stats = {
-    total: mockWorkouts.length,
-    active: mockWorkouts.filter(w => w.isActive).length,
-    completed: mockWorkouts.reduce((sum, w) => sum + w.completedSessions, 0),
+    total: workouts.length,
+    active: workouts.filter(w => w.isActive).length,
+    completed: 0, // TODO: Track completed sessions in the future
   };
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-black mx-auto mb-4 animate-spin" />
+            <p className="text-gray-600">Loading workouts...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <button
+              onClick={fetchWorkouts}
+              className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -247,24 +262,31 @@ export default function WorkoutsPage() {
                     </span>
                     <span className="flex items-center gap-1 text-xs text-gray-600">
                       <Dumbbell size={14} />
-                      {workout.exerciseCount} exercises
+                      {workout.exercises?.length || 0} exercises
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                     <div className="space-y-1">
-                      <p className="text-xs text-gray-500">Sessions completed</p>
-                      <p className="text-sm font-semibold text-gray-900">{workout.completedSessions}</p>
+                      <p className="text-xs text-gray-500">Start date</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {workout.startDate
+                          ? new Date(workout.startDate).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            })
+                          : 'Not set'}
+                      </p>
                     </div>
                     <div className="space-y-1 text-right">
-                      <p className="text-xs text-gray-500">Last completed</p>
+                      <p className="text-xs text-gray-500">Status</p>
                       <p className="text-sm font-semibold text-gray-900">
-                        {workout.lastCompleted
-                          ? new Date(workout.lastCompleted).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric'
-                            })
-                          : 'Never'}
+                        {workout.endDate
+                          ? 'Ended'
+                          : workout.isActive
+                          ? 'Active'
+                          : 'Inactive'}
                       </p>
                     </div>
                   </div>
@@ -286,6 +308,7 @@ export default function WorkoutsPage() {
                     <Edit2 size={18} className="text-gray-600" />
                   </Link>
                   <button
+                    onClick={() => handleDelete(workout.id)}
                     className="p-2 hover:bg-red-50 rounded-lg transition-colors"
                     title="Delete"
                   >
