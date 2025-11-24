@@ -20,17 +20,72 @@ export const authOptions: NextAuthOptions = {
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
+          where: { email: credentials.email.toLowerCase() }
         })
 
-        if (!user) throw new Error("User not found")
-        
+        if (!user) {
+          throw new Error("Invalid email or password")
+        }
+
+        // Check account status
+        if (user.accountStatus === 'SUSPENDED') {
+          throw new Error("Your account has been suspended. Please contact support.")
+        }
+
+        if (user.accountStatus === 'DELETED') {
+          throw new Error("This account no longer exists")
+        }
+
+        // Check if account is locked
+        if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+          const minutesLeft = Math.ceil((user.lockoutUntil.getTime() - Date.now()) / 60000)
+          throw new Error(`Account is locked. Try again in ${minutesLeft} minutes.`)
+        }
+
+        // Verify password
         const isPasswordValid = await bcrypt.compare(
           credentials.password,
           user.password
         )
 
-        if (!isPasswordValid) throw new Error("Invalid password")
+        if (!isPasswordValid) {
+          // Increment failed login attempts
+          const failedAttempts = user.failedLoginAttempts + 1
+          const updateData: any = {
+            failedLoginAttempts: failedAttempts
+          }
+
+          // Lock account after 5 failed attempts for 15 minutes
+          if (failedAttempts >= 5) {
+            updateData.lockoutUntil = new Date(Date.now() + 15 * 60 * 1000)
+          }
+
+          await prisma.user.update({
+            where: { id: user.id },
+            data: updateData
+          })
+
+          if (failedAttempts >= 5) {
+            throw new Error("Too many failed attempts. Account locked for 15 minutes.")
+          }
+
+          throw new Error("Invalid email or password")
+        }
+
+        // Check email verification
+        if (!user.emailVerified) {
+          throw new Error("Please verify your email before signing in. Check your inbox for the verification link.")
+        }
+
+        // Reset failed login attempts and update last login
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            failedLoginAttempts: 0,
+            lockoutUntil: null,
+            lastLoginAt: new Date()
+          }
+        })
 
         return {
           id: user.id,

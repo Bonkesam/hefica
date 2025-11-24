@@ -4,7 +4,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { gsap } from 'gsap';
 import { Eye, EyeOff, Mail, Lock, User, Heart, CheckCircle, Activity } from 'lucide-react';
 import { signIn, getSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import PasswordStrengthIndicator from '@/components/PasswordStrengthIndicator';
 
 interface AuthFormData {
   email: string;
@@ -95,8 +97,9 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  
+
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Refs for GSAP animations
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,7 +116,19 @@ export default function AuthPage() {
       }
     };
     checkAuth();
-  }, [router]);
+
+    // Check for success messages from redirects
+    const verified = searchParams.get('verified');
+    const reset = searchParams.get('reset');
+
+    if (verified === 'true') {
+      setSuccess('Email verified! You can now sign in.');
+    }
+
+    if (reset === 'success') {
+      setSuccess('Password reset successfully! You can now sign in with your new password.');
+    }
+  }, [router, searchParams]);
 
   useEffect(() => {
     // Initial page load animation
@@ -219,9 +234,9 @@ export default function AuthPage() {
         throw new Error(data.error || 'Failed to create account');
       }
 
-      // Show success message
-      setSuccess('Account created successfully! Signing you in...');
-      
+      // Show success message with verification instruction
+      setSuccess(data.message || 'Account created successfully! Please check your email to verify your account.');
+
       // Success animation
       gsap.to(formRef.current, {
         scale: 1.02,
@@ -231,21 +246,20 @@ export default function AuthPage() {
         ease: "power2.inOut"
       });
 
-      // Auto sign in after successful signup
-      setTimeout(async () => {
-        const result = await signIn('credentials', {
-          email: formData.email,
-          password: formData.password,
-          redirect: false,
-        });
+      // Clear form
+      setFormData({
+        email: '',
+        password: '',
+        firstName: '',
+        lastName: '',
+        confirmPassword: ''
+      });
 
-        if (result?.ok) {
-          router.push('/dashboard');
-        } else {
-          setError('Account created but sign in failed. Please sign in manually.');
-          setSuccess('');
-        }
-      }, 1500);
+      // Switch to sign in mode after 5 seconds
+      setTimeout(() => {
+        setIsSignUp(false);
+        setSuccess('');
+      }, 5000);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create account');
@@ -433,21 +447,28 @@ export default function AuthPage() {
             />
 
             {isSignUp && (
-              <InputField
-                type="password"
-                name="confirmPassword"
-                value={formData.confirmPassword || ''}
-                placeholder="Confirm password"
-                icon={Lock}
-                showToggle={true}
-                showPassword={showConfirmPassword}
-                onTogglePassword={() => setShowConfirmPassword(!showConfirmPassword)}
-                onChange={handleInputChange}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
-                isFocused={focusedField === 'confirmPassword'}
-                disabled={isLoading}
-              />
+              <>
+                {formData.password && (
+                  <div className="px-1">
+                    <PasswordStrengthIndicator password={formData.password} />
+                  </div>
+                )}
+                <InputField
+                  type="password"
+                  name="confirmPassword"
+                  value={formData.confirmPassword || ''}
+                  placeholder="Confirm password"
+                  icon={Lock}
+                  showToggle={true}
+                  showPassword={showConfirmPassword}
+                  onTogglePassword={() => setShowConfirmPassword(!showConfirmPassword)}
+                  onChange={handleInputChange}
+                  onFocus={handleFocus}
+                  onBlur={handleBlur}
+                  isFocused={focusedField === 'confirmPassword'}
+                  disabled={isLoading}
+                />
+              </>
             )}
 
             <button
@@ -468,12 +489,12 @@ export default function AuthPage() {
 
           {!isSignUp && (
             <div className="text-center mt-6">
-              <button 
+              <Link
+                href="/auth/forgot-password"
                 className="text-sm text-gray-500 hover:text-black transition-colors font-medium"
-                disabled={isLoading}
               >
                 Forgot your password?
-              </button>
+              </Link>
             </div>
           )}
 
