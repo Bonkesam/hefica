@@ -63,6 +63,27 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Get today's workout
+    const todaysWorkout = await prisma.workout.findFirst({
+      where: {
+        userId: session.user.id,
+        startDate: {
+          gte: startOfToday,
+          lte: endOfToday,
+        },
+      },
+      include: {
+        exercises: {
+          include: {
+            exercise: true,
+          },
+        },
+      },
+      orderBy: {
+        startDate: 'asc',
+      },
+    });
+
     // Calculate today's calories
     const todayCalories = todaysMeals.reduce((sum, meal) => sum + (meal.calories || 0), 0);
 
@@ -103,9 +124,23 @@ export async function GET(request: NextRequest) {
         protein: meal.protein,
         carbs: meal.carbs,
         fat: meal.fat,
+        time: meal.scheduledAt?.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
         scheduledAt: meal.scheduledAt,
         completed: meal.completed,
       })),
+      todaysWorkout: todaysWorkout ? {
+        id: todaysWorkout.id,
+        name: todaysWorkout.name,
+        duration: todaysWorkout.duration,
+        exercises: todaysWorkout.exercises.map(we => ({
+          id: we.id,
+          name: we.exercise.name,
+          sets: we.sets,
+          reps: we.reps,
+          weight: we.weight,
+          completed: we.completed,
+        })),
+      } : null,
     };
 
     return NextResponse.json({ stats }, { status: 200 });
